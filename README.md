@@ -1,3 +1,34 @@
+# Meridian Compositor
+
+Meridian's fork of [Labwc](https://github.com/labwc/labwc) ships the
+Meridian-Precision titlebar theme and clips floating windows to rounded frames.
+The executable and configuration paths retain Labwc's names for session
+compatibility.
+
+The theme is selected by default on fresh configurations. In an existing
+configuration, set these fields inside the current `<theme>` element:
+
+```xml
+<name>Meridian-Precision</name>
+<cornerRadius>12</cornerRadius>
+<windowCornerRadius>12</windowCornerRadius>
+<titlebar>
+  <layout>close,iconify,max:</layout>
+  <showTitle>yes</showTitle>
+</titlebar>
+```
+
+Labwc draws these buttons on server-decorated windows. Apps that draw their own
+titlebars still control their own buttons. The rounded clip applies to the
+whole floating window frame, including client-decorated windows. Tiled,
+maximized, fullscreen and shaded windows bypass the clip. Separate popup
+surfaces, panels and layer-shell surfaces keep their existing geometry.
+
+Clipping uses logical-pixel bands and removes shadows outside the window frame.
+Set `windowCornerRadius` to `0` to disable it. The build uses a pinned wlroots
+subproject because the scene clipping API is supplied as a patch. Build with
+Meson 1.3 or later and librsvg for the bundled SVG buttons.
+
 # labwc
 
 <h3 align="center">[<a
@@ -185,18 +216,9 @@ Build dependencies include:
 
 For OS/distribution specific details see [wiki].
 
-If the right version of `wlroots` is not found on the system, the build setup
-will automatically download the wlroots repo. If this fallback is not desired
-please use:
-
-    meson setup --wrap-mode=nodownload build/
-
-To enforce the supplied wlroots.wrap file, run:
-
-    meson setup --force-fallback-for=wlroots build/
-
-If installing after using the wlroots.wrap file, use the following to
-prevent installing the wlroots headers:
+This fork always builds the wlroots 0.20.1 subproject with Meridian's scene
+clipping patch. Meson fetches it on the first setup. To install the compositor
+without installing the wlroots subproject's headers, use:
 
     meson install --skip-subprojects -C build/
 

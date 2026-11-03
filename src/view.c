@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include "view.h"
 #include <assert.h>
+#include <math.h>
 #include <strings.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_keyboard_group.h>
@@ -547,6 +548,41 @@ view_move(struct view *view, int x, int y)
 	});
 }
 
+static void
+view_update_rounded_clip(struct view *view)
+{
+	if (!view->scene_tree) {
+		return;
+	}
+
+	int radius = rc.window_corner_radius;
+	if (!radius || view->shaded || !view_is_floating(view)
+			|| view->current.width <= 0 || view->current.height <= 0) {
+		wlr_scene_tree_set_meridian_clip(view->scene_tree, NULL);
+		return;
+	}
+
+	struct border frame = ssd_thickness(view);
+	int x = -frame.left, y = -frame.top;
+	int width = view->current.width + frame.left + frame.right;
+	int height = view->current.height + frame.top + frame.bottom;
+	radius = MIN(radius, MIN(width, height) / 2);
+
+	/* One logical-pixel band per corner row, plus the rectangular middle. */
+	pixman_region32_t clip;
+	pixman_region32_init_rect(&clip, x, y + radius, width, height - 2 * radius);
+	for (int row = 0; row < radius; ++row) {
+		double dy = radius - row - 0.5;
+		int inset = round(radius - sqrt(radius * radius - dy * dy));
+		pixman_region32_union_rect(&clip, &clip, x + inset, y + row,
+			width - 2 * inset, 1);
+		pixman_region32_union_rect(&clip, &clip, x + inset, y + height - 1 - row,
+			width - 2 * inset, 1);
+	}
+	wlr_scene_tree_set_meridian_clip(view->scene_tree, &clip);
+	pixman_region32_fini(&clip);
+}
+
 void
 view_moved(struct view *view)
 {
@@ -563,6 +599,7 @@ view_moved(struct view *view)
 	}
 	view_update_outputs(view);
 	ssd_update_geometry(view->ssd);
+	view_update_rounded_clip(view);
 	cursor_update_focus();
 	if (rc.resize_indicator && server.grabbed_view == view) {
 		resize_indicator_update(view);
@@ -1339,6 +1376,7 @@ view_set_maximized(struct view *view, enum view_axis maximized)
 	}
 
 	view->maximized = maximized;
+	view_update_rounded_clip(view);
 	wl_signal_emit_mutable(&view->events.maximized, NULL);
 
 	/*
@@ -1386,6 +1424,7 @@ static void
 view_notify_tiled(struct view *view)
 {
 	assert(view);
+	view_update_rounded_clip(view);
 	if (view->impl->notify_tiled) {
 		view->impl->notify_tiled(view);
 	}
@@ -1643,6 +1682,7 @@ view_set_ssd_mode(struct view *view, enum lab_ssd_mode mode)
 	} else {
 		undecorate(view);
 	}
+	view_update_rounded_clip(view);
 
 	if (!view_is_floating(view)) {
 		view_apply_special_geometry(view);
@@ -1682,6 +1722,7 @@ set_fullscreen(struct view *view, bool fullscreen)
 	if (!fullscreen && view->ssd_mode) {
 		decorate(view);
 	}
+	view_update_rounded_clip(view);
 
 	/* Show fullscreen views above top-layer */
 	if (view->output) {
@@ -2327,6 +2368,7 @@ view_reload_ssd(struct view *view)
 		undecorate(view);
 		decorate(view);
 	}
+	view_update_rounded_clip(view);
 }
 
 void
@@ -2429,6 +2471,7 @@ view_set_shade(struct view *view, bool shaded)
 	}
 
 	view->shaded = shaded;
+	view_update_rounded_clip(view);
 	ssd_enable_shade(view->ssd, view->shaded);
 	/*
 	 * An unmapped view may not have a content tree. When the view

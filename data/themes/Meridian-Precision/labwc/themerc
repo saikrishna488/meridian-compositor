@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-2.0-only
+border.width: 1
+window.active.border.color: #b9c9c0
+window.inactive.border.color: #d6dcdf
+window.active.title.bg.color: #f3f4f6
+window.inactive.title.bg.color: #f7f8f9
+window.active.label.text.color: #20272b
+window.inactive.label.text.color: #606b70
+window.label.text.justify: Center
+window.titlebar.padding.width: 10
+window.titlebar.padding.height: 5
+window.button.width: 32
+window.button.height: 32
+window.button.spacing: 4
+window.button.hover.bg.color: #dcece0
+window.button.hover.bg.corner-radius: 6
+menu.items.bg.color: #ffffff
+menu.items.text.color: #20272b
+menu.items.active.bg.color: #dcece0
+menu.items.active.text.color: #174f31

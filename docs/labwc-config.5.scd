@@ -661,7 +661,12 @@ extending outward from the snapped edge.
 	Show the window title in the titlebar. Default is yes.
 
 *<theme><cornerRadius>*
-	The radius of server side decoration top corners. Default is 8.
+	The radius of server side decoration top corners. Meridian defaults to 12.
+
+*<theme><windowCornerRadius>*
+	The clip radius in logical pixels for floating windows, including app
+	content and compositor decorations. Accepts 0–32. Default is 12.
+	Set to 0 to disable clipping and retain shadows outside the window frame.
 
 *<theme><keepBorder>* [yes|no]
 	Even when disabling server side decorations via ToggleDecorations,

@@ -1234,6 +1234,8 @@ entry(xmlNode *node, char *nodename, char *content)
 		rc.show_title = parse_bool(content, true);
 	} else if (!strcmp(nodename, "cornerradius.theme")) {
 		rc.corner_radius = atoi(content);
+	} else if (!strcasecmp(nodename, "windowCornerRadius.theme")) {
+		rc.window_corner_radius = MAX(0, MIN(32, atoi(content)));
 	} else if (!strcasecmp(nodename, "keepBorder.theme")) {
 		set_bool(content, &rc.ssd_keep_border);
 	} else if (!strcasecmp(nodename, "maximizedDecoration.theme")) {
@@ -1575,7 +1577,8 @@ rcxml_init(void)
 	rc.show_title = true;
 	rc.title_layout_loaded = false;
 	rc.ssd_keep_border = true;
-	rc.corner_radius = 8;
+	rc.corner_radius = 12;
+	rc.window_corner_radius = 12;
 	rc.shadows_enabled = false;
 	rc.shadows_on_tiled = false;
 
@@ -1868,21 +1871,17 @@ post_processing(void)
 		rc.fallback_app_icon_name = xstrdup("labwc");
 	}
 
-	if (!rc.icon_theme_name && rc.theme_name) {
+	if (!rc.theme_name) {
+		rc.theme_name = xstrdup("Meridian-Precision");
+	}
+
+	if (!rc.icon_theme_name && rc.theme_name
+			&& strcmp(rc.theme_name, "Meridian-Precision")) {
 		rc.icon_theme_name = xstrdup(rc.theme_name);
 	}
 
 	if (!rc.title_layout_loaded) {
-#if HAVE_LIBSFDO
-		fill_title_layout("icon:iconify,max,close");
-#else
-		/*
-		 * 'icon' is replaced with 'menu' in fill_title_layout() when
-		 * libsfdo is not linked, but we also replace it here not to
-		 * show error message with default settings.
-		 */
-		fill_title_layout("menu:iconify,max,close");
-#endif
+		fill_title_layout("close,iconify,max:");
 	}
 
 	/*

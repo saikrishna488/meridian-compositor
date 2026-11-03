@@ -3,7 +3,7 @@ project(
   'c',
   version: '0.20.3',
   license: 'GPL-2.0-only',
-  meson_version: '>=0.59.0',
+  meson_version: '>=1.3.0',
   default_options: [
     'c_std=c11',
     'warning_level=2',
@@ -50,11 +50,11 @@ if git.found()
 endif
 add_project_arguments('-DLABWC_VERSION=@0@'.format(version), language: 'c')
 
-wlroots = dependency(
-  'wlroots-0.20',
+# Meridian needs the scene clipping API from the pinned wlroots patch.
+wlroots = subproject(
+  'wlroots',
   default_options: ['default_library=static', 'examples=false'],
-  version: ['>=0.20.1', '<0.21.0'],
-)
+).get_variable('wlroots')
 
 wlroots_has_xwayland = wlroots.get_variable('have_xwayland') == 'true'
 have_libsfdo = not get_option('icon').disabled()
@@ -75,7 +75,7 @@ input = dependency('libinput', version: '>=1.26', required: wlroots.get_variable
 pixman = dependency('pixman-1')
 math = cc.find_library('m')
 png = dependency('libpng')
-svg = dependency('librsvg-2.0', version: '>=2.46', required: false)
+svg = dependency('librsvg-2.0', version: '>=2.46', required: get_option('svg'))
 sfdo_basedir = dependency(
   'libsfdo-basedir',
   default_options: ['default_library=static', 'examples=false', 'tests=false'],
@@ -206,6 +206,8 @@ executable(
   install: true,
   link_args: link_args,
 )
+
+install_subdir('data/themes/Meridian-Precision', install_dir: get_option('datadir') / 'themes')
 
 install_data('data/labwc.desktop', install_dir: get_option('datadir') / 'wayland-sessions')
 

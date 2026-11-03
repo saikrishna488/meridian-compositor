@@ -1,0 +1,163 @@
+--- a/include/wlr/types/wlr_scene.h
++++ b/include/wlr/types/wlr_scene.h
+@@ -92,6 +92,9 @@
+ 	struct wlr_scene_node node;
+ 
+ 	struct wl_list children; // wlr_scene_node.link
++
++	// Optional clip in tree-local logical coordinates.
++	pixman_region32_t *meridian_clip;
+ };
+ 
+ /** The root scene-graph node. */
+@@ -388,6 +391,10 @@
+  */
+ struct wlr_scene_tree *wlr_scene_tree_create(struct wlr_scene_tree *parent);
+ 
++/** Copy a tree-local clipping region, or clear it with NULL. */
++void wlr_scene_tree_set_meridian_clip(struct wlr_scene_tree *tree,
++	const pixman_region32_t *clip);
++
+ /**
+  * Add a node displaying a single surface to the scene-graph.
+  *
+--- a/types/scene/wlr_scene.c
++++ b/types/scene/wlr_scene.c
+@@ -1,4 +1,5 @@
+ #include <assert.h>
++#include <math.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <wlr/backend.h>
+@@ -156,6 +157,10 @@
+ 				&scene_tree->children, link) {
+ 			wlr_scene_node_destroy(child);
+ 		}
++		if (scene_tree->meridian_clip) {
++			pixman_region32_fini(scene_tree->meridian_clip);
++			free(scene_tree->meridian_clip);
++		}
+ 	}
+ 
+ 	assert(wl_list_empty(&node->events.destroy.listener_list));
+@@ -256,6 +261,21 @@
+ 	return _scene_nodes_in_box(node, box, iterator, user_data, x, y);
+ }
+ 
++/* x and y describe the leaf origin in the region's coordinate space. */
++static void scene_node_apply_clips(struct wlr_scene_node *node, int x, int y,
++		pixman_region32_t *region) {
++	for (; node->parent; node = &node->parent->node) {
++		x -= node->x;
++		y -= node->y;
++		const pixman_region32_t *clip = node->parent->meridian_clip;
++		if (clip) {
++			pixman_region32_translate(region, -x, -y);
++			pixman_region32_intersect(region, region, clip);
++			pixman_region32_translate(region, x, y);
++		}
++	}
++}
++
+ static void scene_node_opaque_region(struct wlr_scene_node *node, int x, int y,
+ 		pixman_region32_t *opaque) {
+ 	int width, height;
+@@ -281,12 +301,14 @@
+ 			pixman_region32_copy(opaque, &scene_buffer->opaque_region);
+ 			pixman_region32_intersect_rect(opaque, opaque, 0, 0, width, height);
+ 			pixman_region32_translate(opaque, x, y);
++			scene_node_apply_clips(node, x, y, opaque);
+ 			return;
+ 		}
+ 	}
+ 
+ 	pixman_region32_fini(opaque);
+ 	pixman_region32_init_rect(opaque, x, y, width, height);
++	scene_node_apply_clips(node, x, y, opaque);
+ }
+ 
+ struct scene_update_data {
+@@ -582,6 +604,7 @@
+ 	pixman_region32_union(&node->visible, &node->visible, data->visible);
+ 	pixman_region32_intersect_rect(&node->visible, &node->visible,
+ 		lx, ly, box.width, box.height);
++	scene_node_apply_clips(node, lx, ly, &node->visible);
+ 
+ 	if (data->calculate_visibility) {
+ 		pixman_region32_t opaque;
+@@ -748,6 +771,41 @@
+ 	scene_node_visibility(node, damage);
+ 	scene_damage_outputs(scene, damage);
+ 	pixman_region32_fini(damage);
++}
++
++void wlr_scene_tree_set_meridian_clip(struct wlr_scene_tree *tree,
++		const pixman_region32_t *clip) {
++	if (!clip && !tree->meridian_clip) {
++		return;
++	}
++	if (clip && tree->meridian_clip &&
++			pixman_region32_equal(tree->meridian_clip, clip)) {
++		return;
++	}
++
++	if (clip) {
++		pixman_region32_t *copy = malloc(sizeof(*copy));
++		if (!copy) {
++			return;
++		}
++		pixman_region32_init(copy);
++		if (!pixman_region32_copy(copy, clip)) {
++			pixman_region32_fini(copy);
++			free(copy);
++			return;
++		}
++		if (tree->meridian_clip) {
++			pixman_region32_fini(tree->meridian_clip);
++			free(tree->meridian_clip);
++		}
++		tree->meridian_clip = copy;
++	} else {
++		pixman_region32_fini(tree->meridian_clip);
++		free(tree->meridian_clip);
++		tree->meridian_clip = NULL;
++	}
++
++	scene_node_update(&tree->node, NULL);
+ }
+ 
+ struct wlr_scene_rect *wlr_scene_rect_create(struct wlr_scene_tree *parent,
+@@ -1388,6 +1446,19 @@
+ 	double ry = at_data->ly - ly;
+ 
+ 	if (node->type == WLR_SCENE_NODE_BUFFER) {
++		/* Leave compositor resize margins available outside the visible frame. */
++		double tree_x = rx, tree_y = ry;
++		for (struct wlr_scene_node *ancestor = node; ancestor->parent;
++				ancestor = &ancestor->parent->node) {
++			tree_x += ancestor->x;
++			tree_y += ancestor->y;
++			pixman_region32_t *clip = ancestor->parent->meridian_clip;
++			if (clip && !pixman_region32_contains_point(clip,
++					floor(tree_x), floor(tree_y), NULL)) {
++				return false;
++			}
++		}
++
+ 		struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
+ 
+ 		if (scene_buffer->point_accepts_input &&
+@@ -2056,6 +2127,13 @@
+ 	struct wlr_scene_output *scene_output = data->output;
+ 	struct wlr_scene_node *node = entry->node;
+ 
++	for (struct wlr_scene_tree *parent = node->parent; parent;
++			parent = parent->node.parent) {
++		if (parent->meridian_clip) {
++			return SCANOUT_INELIGIBLE;
++		}
++	}
++
+ 	if (!scene_output->scene->direct_scanout) {
+ 		return SCANOUT_INELIGIBLE;
+ 	}
